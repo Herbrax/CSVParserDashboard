@@ -11,10 +11,11 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 public class CSVParser {
-
+	// Live 
     private static final String SEMICOLON = ":";
-    private static final int RANDOM_COUNT = 10;
     private static final Random RANDOM = new Random();
+    private static final int TOTAL_SAMPLES_FOR_WEEK = 350;  
+
     public static void main(String[] args) throws IOException {
         String csvFile = "/Users/herbrax/Documents/GitHub/UttTest/input.csv";
         List<Question> questions = parseCSV(csvFile);
@@ -47,39 +48,41 @@ public class CSVParser {
                         Collectors.groupingBy(Question::getWorkerEmail)));
     }
 
+
     private static List<Question> selectRandomQuestions(Map<String, Map<String, List<Question>>> questionMap) {
         List<Question> selectedQuestions = new ArrayList<>();
-        int totalCount = 0;
-        Map<String, Integer> questionTypeCount = new HashMap<>();
-        Map<String, Set<String>> workersPerQuestionType = new HashMap<>();
+        Map<String, Integer> questionTypeSampleCount = new HashMap<>();
 
         for (Map.Entry<String, Map<String, List<Question>>> questionTypeEntry : questionMap.entrySet()) {
             String questionType = questionTypeEntry.getKey();
             Map<String, List<Question>> workerMap = questionTypeEntry.getValue();
+            
+            int totalSamplesAvailable = workerMap.values().stream().mapToInt(List::size).sum();
+            int totalSelectedForThisType = 0;
 
-            questionTypeCount.put(questionType, 0);
-            workersPerQuestionType.put(questionType, new HashSet<>());
+            if(totalSamplesAvailable <= TOTAL_SAMPLES_FOR_WEEK) {
+                for (List<Question> questions : workerMap.values()) {
+                    selectedQuestions.addAll(questions);
+                    totalSelectedForThisType += questions.size();
+                }
+                System.err.println("Warning: Total samples for question type " + questionType + " is less than TOTAL_SAMPLES_FOR_WEEK. Total available: " + totalSamplesAvailable);
+            } else {
+                int totalWorkers = workerMap.keySet().size();
+                int samplesPerWorker = TOTAL_SAMPLES_FOR_WEEK / totalWorkers;
+                int samplesToTake = samplesPerWorker;
 
-            for (Map.Entry<String, List<Question>> workerEntry : workerMap.entrySet()) {
-                String email = workerEntry.getKey();
-                List<Question> questions = workerEntry.getValue();
-                List<Question> selected = selectRandom(questions, RANDOM_COUNT);
-                int count = selected.size();
-                totalCount += count;
-
-                questionTypeCount.put(questionType, questionTypeCount.get(questionType) + count);
-                workersPerQuestionType.get(questionType).add(email);
-
-                System.out.println("For worker email: " + email + ", question type: " + questionType + ", selected: " + count + " questions.");
-                selectedQuestions.addAll(selected);
+                for (List<Question> questions : workerMap.values()) {
+                    List<Question> selected = selectRandom(questions, samplesToTake);
+                    totalSelectedForThisType += selected.size();
+                    selectedQuestions.addAll(selected);
+                }
             }
+
+            questionTypeSampleCount.put(questionType, totalSelectedForThisType);
         }
 
-        System.out.println("Total selected questions: " + totalCount);
-
-        for (String questionType : questionTypeCount.keySet()) {
-            System.out.println("For question type: " + questionType + ", total questions: " + questionTypeCount.get(questionType) +
-                    ", total workers: " + workersPerQuestionType.get(questionType).size());
+        for (Map.Entry<String, Integer> entry : questionTypeSampleCount.entrySet()) {
+            System.out.println("Total samples for question type " + entry.getKey() + ": " + entry.getValue());
         }
 
         return selectedQuestions;
@@ -89,10 +92,8 @@ public class CSVParser {
 
     private static List<Question> selectRandom(List<Question> list, int count) {
         List<Question> randomQuestions = new ArrayList<>();
-        for (int i = 0; i < count; i++) {
-            if(list.size() > 0){
-                randomQuestions.add(list.remove(RANDOM.nextInt(list.size())));
-            }
+        for (int i = 0; i < count && !list.isEmpty(); i++) {
+            randomQuestions.add(list.remove(RANDOM.nextInt(list.size())));
         }
         return randomQuestions;
     }
@@ -104,10 +105,27 @@ public class CSVParser {
 
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(filename))) {
             writer.write("sep=;\n");
-            writer.write("Question type;Worker email;QuestionID;Original QuestionID\n");
+            writer.write("Question Type RV;Question Type TR; ;Reviewer email; ;Transcriber QuestionID;Link; ;Review QuestionID;Link\n");
+
             for (Question question : sortedQuestions) {
-                writer.write(question.toCSVString() + "\n");
+                writer.write(formatRow(question) + "\n");
             }
         }
     }
+
+    private static String formatRow(Question question) {
+        String columnA = question.getQuestionType();
+        String columnB = question.getQuestionType() + "_transcription_review";
+        String columnC = "";
+        String columnD = question.getWorkerEmail();
+        String columnE = "";
+        String columnF = question.getOriginalQuestionId();
+        String columnG = "https://crowdcompute-internal.corp.google.com/m/answers/" + columnF + "?poolid=default_worker_pool";
+        String columnH = "";
+        String columnI = question.getQuestionId();
+        String columnJ = "https://crowdcompute-internal.corp.google.com/m/answers/" + columnI + "?poolid=default_worker_pool";
+
+        return String.join(";", columnA, columnB, columnC, columnD, columnE, columnF, columnG, columnH, columnI, columnJ);
+    }
+
 }
